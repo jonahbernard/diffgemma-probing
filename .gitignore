@@ -1,0 +1,9 @@
+# Traces / probe dumps — too big for the repo (multi-GB confidence + activation JSONL)
+*.jsonl
+
+# Generated animations
+*.gif
+
+# Python caches
+__pycache__/
+*.pyc

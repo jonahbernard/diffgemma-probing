@@ -1,0 +1,170 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>diffgemma meanH over steps</title>
+<style>
+  body { font-family: monospace; margin: 16px; background:#fafafa; color:#222; }
+  h3 { margin:6px 0; }
+  .legend { font-size:12px; color:#555; margin-bottom:8px; }
+  .sw { display:inline-block; width:11px; height:11px; vertical-align:middle;
+         margin:0 3px 0 10px; border:1px solid #888; }
+  #readout { font-size:12px; color:#222; height:16px; margin-top:4px; }
+  label.legend { margin-left:12px; }
+  svg { background:#fff; border:1px solid #ddd; }
+  .grid { stroke:#eee; stroke-width:1; }
+  .axis { stroke:#888; stroke-width:1; }
+  .thr { stroke:#e6a000; stroke-width:1; stroke-dasharray:4 3; }
+  .ax-lbl { font-size:11px; fill:#666; }
+</style></head><body>
+  <h3>mean token entropy per denoising step</h3>
+  <div class="legend">
+    <span class="sw" style="background:#c44"></span>mxfp4
+    <span class="sw" style="background:#2a7"></span>bf16
+    <span class="sw" style="background:#e6a000"></span>commit threshold (0.005)
+    <label class="legend"><input type="checkbox" id="logy"> log y-axis</label>
+    · <a href="token_scrubber.html">scrubber</a>
+  </div>
+  <div id="chart"></div>
+  <div id="readout">&nbsp;</div>
+<script>
+const BF = [[0, 0.0155], [1, 1e-05], [2, 0.31185], [3, 0.13242], [4, 0.052], [5, 0.02046], [6, 0.00557], [7, 0.0004]];   // [[step, meanH], ...]
+const MX = [[0, 0.02956], [1, 0.00034], [2, 0.49241], [3, 0.27152], [4, 0.19845], [5, 0.13001], [6, 0.14638], [7, 0.07468], [8, 0.06239], [9, 0.03389], [10, 0.04791], [11, 0.03107], [12, 0.01502], [13, 0.02289], [14, 0.02525], [15, 0.00687], [16, 0.01436], [17, 0.01313], [18, 0.01187], [19, 0.01183], [20, 0.02252], [21, 0.01246], [22, 0.00868], [23, 0.01079], [24, 0.01275], [25, 0.0106], [26, 0.01279], [27, 0.00679], [28, 0.00783], [29, 0.0088], [30, 0.00904], [31, 0.01225], [32, 0.01313], [33, 0.0093], [34, 0.00755], [35, 0.00303]];
+const CONF = 0.005;      // commit threshold (mean_entropy < CONF => confident)
+const W = 900, H = 460, PADL = 64, PADR = 20, PADT = 20, PADB = 44;
+const PW = W - PADL - PADR, PH = H - PADT - PADB;
+
+let logY = false;
+const allSteps = BF.concat(MX).map(d => d[0]);
+const allVals = BF.concat(MX).map(d => d[1]);
+const xMin = Math.min(...allSteps), xMax = Math.max(...allSteps);
+const yMaxRaw = Math.max(...allVals, CONF);
+// Smallest positive value (for log-scale floor); fall back to a tiny epsilon.
+const posVals = allVals.concat([CONF]).filter(v => v > 0);
+const yMinPos = posVals.length ? Math.min(...posVals) : 1e-6;
+
+const xScale = s => PADL + (xMax === xMin ? 0 : (s - xMin) / (xMax - xMin) * PW);
+function yScale(v) {
+  if (logY) {
+    const lo = Math.log10(yMinPos), hi = Math.log10(yMaxRaw || 1);
+    const vv = Math.log10(Math.max(v, yMinPos));
+    return PADT + (hi === lo ? 0 : (1 - (vv - lo) / (hi - lo)) * PH);
+  }
+  return PADT + (1 - v / (yMaxRaw || 1)) * PH;
+}
+
+function path(series) {
+  return series.map((d, i) =>
+    (i ? "L" : "M") + xScale(d[0]).toFixed(1) + " " + yScale(d[1]).toFixed(1)
+  ).join(" ");
+}
+
+function ticksY() {
+  const out = [];
+  if (logY) {
+    let e = Math.floor(Math.log10(yMinPos));
+    const top = Math.ceil(Math.log10(yMaxRaw || 1));
+    for (; e <= top; e++) out.push(Math.pow(10, e));
+  } else {
+    const n = 5;
+    for (let i = 0; i <= n; i++) out.push(yMaxRaw * i / n);
+  }
+  return out;
+}
+function ticksX() {
+  const out = [], span = xMax - xMin, stepGuess = Math.ceil(span / 10) || 1;
+  for (let s = xMin; s <= xMax; s += stepGuess) out.push(s);
+  if (out[out.length - 1] !== xMax) out.push(xMax);
+  return out;
+}
+
+const SVGNS = "http://www.w3.org/2000/svg";
+function el(name, attrs) {
+  const n = document.createElementNS(SVGNS, name);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  return n;
+}
+
+let svg, dotsLayer;
+function draw() {
+  const chart = document.getElementById('chart');
+  chart.innerHTML = "";
+  svg = el("svg", {width: W, height: H, viewBox: "0 0 " + W + " " + H});
+
+  // y grid + labels
+  for (const t of ticksY()) {
+    const y = yScale(t);
+    svg.appendChild(el("line", {class:"grid", x1:PADL, y1:y, x2:W-PADR, y2:y}));
+    const lbl = el("text", {class:"ax-lbl", x:PADL-6, y:y+3, "text-anchor":"end"});
+    lbl.textContent = t >= 0.01 || t === 0 ? t.toFixed(3) : t.toExponential(0);
+    svg.appendChild(lbl);
+  }
+  // x grid + labels
+  for (const t of ticksX()) {
+    const x = xScale(t);
+    svg.appendChild(el("line", {class:"grid", x1:x, y1:PADT, x2:x, y2:H-PADB}));
+    const lbl = el("text", {class:"ax-lbl", x:x, y:H-PADB+16, "text-anchor":"middle"});
+    lbl.textContent = t;
+    svg.appendChild(lbl);
+  }
+  // axes
+  svg.appendChild(el("line", {class:"axis", x1:PADL, y1:PADT, x2:PADL, y2:H-PADB}));
+  svg.appendChild(el("line", {class:"axis", x1:PADL, y1:H-PADB, x2:W-PADR, y2:H-PADB}));
+  // axis titles
+  const xt = el("text", {class:"ax-lbl", x:PADL+PW/2, y:H-6, "text-anchor":"middle"});
+  xt.textContent = "denoising step"; svg.appendChild(xt);
+  const yt = el("text", {class:"ax-lbl", x:14, y:PADT+PH/2,
+    "text-anchor":"middle", transform:"rotate(-90 14 " + (PADT+PH/2) + ")"});
+  yt.textContent = "mean token entropy"; svg.appendChild(yt);
+
+  // commit threshold reference line (skipped on log axis if <= 0)
+  if (!(logY && CONF <= 0)) {
+    const yT = yScale(CONF);
+    svg.appendChild(el("line", {class:"thr", x1:PADL, y1:yT, x2:W-PADR, y2:yT}));
+  }
+
+  // series lines
+  svg.appendChild(el("path", {d:path(BF), fill:"none", stroke:"#2a7", "stroke-width":2}));
+  svg.appendChild(el("path", {d:path(MX), fill:"none", stroke:"#c44", "stroke-width":2}));
+
+  // dot markers
+  for (const [series, color] of [[BF, "#2a7"], [MX, "#c44"]]) {
+    for (const d of series) {
+      svg.appendChild(el("circle", {cx:xScale(d[0]), cy:yScale(d[1]), r:2.5,
+        fill:color}));
+    }
+  }
+
+  // hover guide + nearest-point readout
+  const guide = el("line", {class:"axis", x1:0, y1:PADT, x2:0, y2:H-PADB,
+    stroke:"#bbb", "stroke-dasharray":"2 2", visibility:"hidden"});
+  svg.appendChild(guide);
+  const hit = el("rect", {x:PADL, y:PADT, width:PW, height:PH, fill:"transparent"});
+  svg.appendChild(hit);
+  const ro = document.getElementById('readout');
+  function nearest(series, sx) {
+    let best = null, bd = Infinity;
+    for (const d of series) { const dx = Math.abs(xScale(d[0]) - sx);
+      if (dx < bd) { bd = dx; best = d; } }
+    return best;
+  }
+  hit.addEventListener('mousemove', e => {
+    const r = svg.getBoundingClientRect();
+    const sx = (e.clientX - r.left) * (W / r.width);
+    guide.setAttribute('x1', sx); guide.setAttribute('x2', sx);
+    guide.setAttribute('visibility', 'visible');
+    const b = nearest(BF, sx), m = nearest(MX, sx);
+    ro.innerHTML =
+      "step " + (m ? m[0] : "-") +
+      " &nbsp; <span style='color:#c44'>mxfp4 meanH=" + (m ? m[1] : "-") + "</span>" +
+      " &nbsp; <span style='color:#2a7'>bf16 meanH=" + (b ? b[1] : "-") + "</span>";
+  });
+  hit.addEventListener('mouseleave', () => {
+    guide.setAttribute('visibility', 'hidden'); ro.innerHTML = "&nbsp;";
+  });
+
+  chart.appendChild(svg);
+}
+
+document.getElementById('logy').addEventListener('change', e => {
+  logY = e.target.checked; draw();
+});
+draw();
+</script></body></html>
