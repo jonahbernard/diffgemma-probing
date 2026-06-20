@@ -16,8 +16,11 @@ export PYTHONPATH=/app/aiter-jonah
 export VLLM_ROCM_USE_AITER=1
 export VLLM_ROCM_USE_AITER_MOE=1
 export GPU_ARCHS=gfx950
-export HIP_VISIBLE_DEVICES=${HIP_VISIBLE_DEVICES:-2}
+export HIP_VISIBLE_DEVICES=${HIP_VISIBLE_DEVICES:-0}
 export VLLM_LOGGING_LEVEL=INFO
+# One server per GPU: port = 8000 + GPU index (GPU 6 -> 8006, GPU 7 -> 8007).
+GPU=${HIP_VISIBLE_DEVICES}
+PORT=${PORT:-$((8000 + GPU))}
 cd /app/vllm-jonah
 exec vllm serve /app/models/diffusiongemma-26B-A4B-it \
   --served-model-name diffgemma-bf16 \
@@ -31,4 +34,4 @@ exec vllm serve /app/models/diffusiongemma-26B-A4B-it \
   --reasoning-parser gemma4 \
   --chat-template examples/tool_chat_template_gemma4.jinja \
   --attention-backend TRITON_ATTN \
-  --port ${PORT:-8002}
+  --port "$PORT"

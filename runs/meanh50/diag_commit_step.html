@@ -1,0 +1,97 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Commit-step distribution</title>
+<style>
+  body { font-family: monospace; margin: 16px; background:#fafafa; color:#222; }
+  h3 { margin:6px 0; }
+  .legend { font-size:12px; color:#555; margin-bottom:8px; }
+  .sw { display:inline-block; width:11px; height:11px; vertical-align:middle;
+         margin:0 3px 0 10px; border:1px solid #888; }
+  #readout { font-size:12px; color:#222; height:16px; margin-top:4px; }
+  label.legend { margin-left:12px; }
+  svg { background:#fff; border:1px solid #ddd; }
+  .grid { stroke:#eee; stroke-width:1; }
+  .axis { stroke:#888; stroke-width:1; }
+  .thr { stroke:#e6a000; stroke-width:1; stroke-dasharray:4 3; }
+  .ax-lbl { font-size:11px; fill:#666; }
+</style></head><body>
+  <h3>distribution of the first step each canvas crosses the threshold (bars=PMF, lines=CDF)</h3>
+  <div class="legend"><span class="sw" style="background:#2a7"></span>bf16 temp0
+    <span class="sw" style="background:#c44"></span>bf16 temp0.6
+    <span class="sw" style="background:#36c"></span>moe-fp4/mlp-bf16 temp0
+    <span class="sw" style="background:#e6a000"></span>moe-fp4/mlp-bf16 temp0.6</div>
+  <div id="chart"></div>
+  <div id="readout">&nbsp;</div>
+<script>
+const SERIES = [{"name": "bf16 temp0", "color": "#2a7", "pmf": [[1, 0], [2, 0], [3, 0], [4, 0], [5, 4], [6, 20], [7, 42], [8, 43], [9, 40], [10, 81], [11, 206], [12, 456], [13, 701], [14, 802], [15, 744], [16, 613], [17, 431], [18, 286], [19, 191], [20, 120], [21, 69], [22, 47], [23, 25], [24, 21], [25, 10], [26, 6], [27, 3], [28, 1], [29, 2], [30, 2], [31, 0], [32, 0], [33, 0], [34, 0], [35, 3], [36, 1], [37, 0], [38, 2], [39, 0], [40, 0], [41, 0], [42, 0], [43, 0], [44, 0], [45, 0], [46, 0], [47, 0]], "never": 0, "n": 4972}, {"name": "bf16 temp0.6", "color": "#c44", "pmf": [[1, 0], [2, 0], [3, 0], [4, 0], [5, 9], [6, 22], [7, 46], [8, 50], [9, 41], [10, 76], [11, 192], [12, 441], [13, 696], [14, 811], [15, 744], [16, 608], [17, 437], [18, 301], [19, 177], [20, 139], [21, 71], [22, 52], [23, 22], [24, 12], [25, 7], [26, 3], [27, 3], [28, 4], [29, 0], [30, 0], [31, 4], [32, 0], [33, 0], [34, 1], [35, 1], [36, 1], [37, 0], [38, 0], [39, 0], [40, 0], [41, 0], [42, 0], [43, 0], [44, 0], [45, 0], [46, 0], [47, 1]], "never": 0, "n": 4972}, {"name": "moe-fp4/mlp-bf16 temp0", "color": "#36c", "pmf": [[1, 0], [2, 0], [3, 0], [4, 0], [5, 5], [6, 32], [7, 35], [8, 34], [9, 35], [10, 41], [11, 91], [12, 198], [13, 435], [14, 654], [15, 767], [16, 746], [17, 632], [18, 417], [19, 290], [20, 215], [21, 109], [22, 88], [23, 54], [24, 30], [25, 22], [26, 13], [27, 8], [28, 7], [29, 3], [30, 2], [31, 4], [32, 0], [33, 3], [34, 0], [35, 0], [36, 2], [37, 0], [38, 0], [39, 0], [40, 0], [41, 0], [42, 0], [43, 0], [44, 0], [45, 0], [46, 0], [47, 0]], "never": 0, "n": 4972}, {"name": "moe-fp4/mlp-bf16 temp0.6", "color": "#e6a000", "pmf": [[1, 0], [2, 0], [3, 0], [4, 0], [5, 7], [6, 22], [7, 41], [8, 45], [9, 43], [10, 37], [11, 74], [12, 223], [13, 435], [14, 641], [15, 803], [16, 729], [17, 644], [18, 443], [19, 282], [20, 173], [21, 128], [22, 68], [23, 58], [24, 19], [25, 18], [26, 6], [27, 8], [28, 10], [29, 4], [30, 4], [31, 1], [32, 0], [33, 1], [34, 1], [35, 2], [36, 0], [37, 0], [38, 1], [39, 0], [40, 1], [41, 0], [42, 0], [43, 0], [44, 0], [45, 0], [46, 0], [47, 0]], "never": 0, "n": 4972}];
+const CFG = {};
+const W = 980, H = 520, PADL = 64, PADR = 20, PADT = 20, PADB = 48;
+const PW = W - PADL - PADR, PH = H - PADT - PADB;
+const SVGNS = "http://www.w3.org/2000/svg";
+function el(name, attrs) {
+  const n = document.createElementNS(SVGNS, name);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  return n;
+}
+function hexA(hex, a) {
+  let h = hex.replace("#", "");
+  if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16),
+        b = parseInt(h.slice(4,6),16);
+  return "rgba("+r+","+g+","+b+","+a+")";
+}
+
+let xMin=1,xMax=1;
+for (const s of SERIES) for (const d of s.pmf) if(d[0]>xMax)xMax=d[0];
+let yMax=0;
+for (const s of SERIES) for (const d of s.pmf) { const f=d[1]/s.n; if(f>yMax)yMax=f; }
+yMax=yMax*1.1||1;
+const xScale=s=>PADL+(xMax<=1?0:(s-xMin)/(xMax-xMin))*PW;
+const yScale=v=>PADT+(1-v/yMax)*PH;
+const yCdf=v=>PADT+(1-v)*PH;
+let svg;
+function draw() {
+  const chart=document.getElementById('chart'); chart.innerHTML="";
+  svg=el("svg",{width:W,height:H,viewBox:"0 0 "+W+" "+H});
+  for (let i=0;i<=5;i++) { const y=PADT+(i/5)*PH;
+    svg.appendChild(el("line",{class:"grid",x1:PADL,y1:y,x2:W-PADR,y2:y})); }
+  const span=xMax-xMin, sg=Math.ceil(span/12)||1;
+  for (let t=xMin;t<=xMax;t+=sg) { const x=xScale(t);
+    const l=el("text",{class:"ax-lbl",x:x,y:H-PADB+16,"text-anchor":"middle"});
+    l.textContent=t; svg.appendChild(l); }
+  // left axis = pmf fraction
+  for (let i=0;i<=5;i++) { const v=yMax*i/5, y=yScale(v);
+    const l=el("text",{class:"ax-lbl",x:PADL-6,y:y+3,"text-anchor":"end"});
+    l.textContent=v.toFixed(3); svg.appendChild(l); }
+  // right axis = cdf 0..1
+  for (let i=0;i<=5;i++) { const q=i/5,y=yCdf(q);
+    const l=el("text",{class:"ax-lbl",x:W-PADR+4,y:y+3,"text-anchor":"start"});
+    l.textContent=q.toFixed(1); svg.appendChild(l); }
+  svg.appendChild(el("line",{class:"axis",x1:PADL,y1:PADT,x2:PADL,y2:H-PADB}));
+  svg.appendChild(el("line",{class:"axis",x1:PADL,y1:H-PADB,x2:W-PADR,y2:H-PADB}));
+  svg.appendChild(el("line",{class:"axis",x1:W-PADR,y1:PADT,x2:W-PADR,y2:H-PADB}));
+  const xt=el("text",{class:"ax-lbl",x:PADL+PW/2,y:H-6,"text-anchor":"middle"});
+  xt.textContent="first step crossing threshold"; svg.appendChild(xt);
+  const yt=el("text",{class:"ax-lbl",x:14,y:PADT+PH/2,"text-anchor":"middle",
+    transform:"rotate(-90 14 "+(PADT+PH/2)+")"});
+  yt.textContent="fraction of canvases (bars)"; svg.appendChild(yt);
+  const nser=SERIES.length, bw=(xScale(xMin+1)-xScale(xMin))/(nser+1)||4;
+  SERIES.forEach((s,si)=>{
+    for (const d of s.pmf) { const f=d[1]/s.n; if(!f) continue;
+      const x=xScale(d[0])+ (si-(nser-1)/2)*bw, y=yScale(f);
+      svg.appendChild(el("rect",{x:x-bw/2,y:y,width:Math.max(1,bw-0.5),
+        height:(H-PADB)-y,fill:hexA(s.color,0.55)})); }
+  });
+  for (const s of SERIES) { // cdf line
+    let acc=0; const pts=[];
+    for (const d of s.pmf) { acc+=d[1]/s.n; pts.push([d[0],acc]); }
+    const dd=pts.map((p,i)=>(i?"L":"M")+xScale(p[0]).toFixed(1)+" "+yCdf(p[1]).toFixed(1)).join(" ");
+    svg.appendChild(el("path",{d:dd,fill:"none",stroke:s.color,"stroke-width":2})); }
+  const ro=document.getElementById('readout'); let parts=[];
+  for (const s of SERIES) parts.push("<span style='color:"+s.color+"'>"+s.name+
+    " never-commit "+(s.never/s.n*100).toFixed(1)+"%</span>");
+  ro.innerHTML=parts.join(" &nbsp; ");
+  chart.appendChild(svg);
+}
+draw();
+
+</script></body></html>

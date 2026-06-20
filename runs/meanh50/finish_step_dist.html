@@ -1,0 +1,157 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>finish-step distribution</title>
+<style>
+  body { font-family: monospace; margin: 16px; background:#fafafa; color:#222; }
+  h3 { margin:14px 0 4px; } h4 { margin:10px 0 2px; font-weight:normal; color:#555; }
+  .legend { font-size:12px; color:#555; margin-bottom:6px; }
+  .sw { display:inline-block; width:11px; height:11px; vertical-align:middle;
+         margin:0 3px 0 10px; border:1px solid #888; }
+  svg { background:#fff; border:1px solid #ddd; display:block; margin-bottom:8px; }
+  .grid { stroke:#eee; stroke-width:1; }
+  .axis { stroke:#888; stroke-width:1; }
+  .ax-lbl { font-size:11px; fill:#666; }
+  table { border-collapse:collapse; font-size:12px; margin:4px 0 14px; }
+  td,th { border:1px solid #ddd; padding:2px 8px; text-align:right; }
+  th { background:#f0f0f0; }
+</style></head><body>
+  <h3>finish-step distribution &mdash; 10000 canvases/variant (commit = meanH &le; 0.005)</h3>
+  <div class="legend"><span class="sw" style="background:#2a7"></span>bf16 t0
+    <span class="sw" style="background:#c44"></span>bf16 t0.6
+    <span class="sw" style="background:#36c"></span>moe t0
+    <span class="sw" style="background:#e6a000"></span>moe t0.6</div>
+  <div id="summary"></div>
+  <h4>1. histogram &mdash; fraction of canvases finishing ON each step</h4>
+  <div id="hist"></div>
+  <h4>2. finish-step buckets &mdash; grouped bars (early &rarr; late)</h4>
+  <div id="bucket"></div>
+  <h4>3. box plot &mdash; finish-step spread per variant (box=IQR, whiskers=p10/p90, dot=mean)</h4>
+  <div id="box"></div>
+  <h4>4. CDF &mdash; fraction finished BY step</h4>
+  <div id="cdf"></div>
+<script>
+const VARIANTS = [{"name": "bf16 t0", "color": "#2a7", "ncommit": 10000, "never": 0, "hist": [[1, 0.0], [2, 0.0], [3, 0.0], [4, 0.0], [5, 0.0035], [6, 0.0103], [7, 0.0173], [8, 0.02], [9, 0.0166], [10, 0.0273], [11, 0.0575], [12, 0.1027], [13, 0.1395], [14, 0.1471], [15, 0.127], [16, 0.1064], [17, 0.0746], [18, 0.052], [19, 0.0354], [20, 0.0224], [21, 0.0154], [22, 0.0096], [23, 0.0057], [24, 0.0039], [25, 0.0018], [26, 0.0014], [27, 0.0008], [28, 0.0004], [29, 0.0002], [30, 0.0003], [31, 0.0001], [32, 0.0], [33, 0.0], [34, 0.0], [35, 0.0003], [36, 0.0001], [37, 0.0], [38, 0.0002], [39, 0.0], [40, 0.0], [41, 0.0], [42, 0.0], [43, 0.0], [44, 0.0], [45, 0.0001], [46, 0.0], [47, 0.0001]], "cdf": [[1, 0.0], [2, 0.0], [3, 0.0], [4, 0.0], [5, 0.0035], [6, 0.0138], [7, 0.0311], [8, 0.0511], [9, 0.0677], [10, 0.095], [11, 0.1525], [12, 0.2552], [13, 0.3947], [14, 0.5418], [15, 0.6688], [16, 0.7752], [17, 0.8498], [18, 0.9018], [19, 0.9372], [20, 0.9596], [21, 0.975], [22, 0.9846], [23, 0.9903], [24, 0.9942], [25, 0.996], [26, 0.9974], [27, 0.9982], [28, 0.9986], [29, 0.9988], [30, 0.9991], [31, 0.9992], [32, 0.9992], [33, 0.9992], [34, 0.9992], [35, 0.9995], [36, 0.9996], [37, 0.9996], [38, 0.9998], [39, 0.9998], [40, 0.9998], [41, 0.9998], [42, 0.9998], [43, 0.9998], [44, 0.9998], [45, 0.9999], [46, 0.9999], [47, 1.0]], "buckets": [0.095, 0.5738, 0.2908, 0.0404], "box": {"min": 5, "max": 47, "p10": 11.0, "q1": 12.0, "med": 14.0, "q3": 16.0, "p90": 18.0, "mean": 14.375}}, {"name": "bf16 t0.6", "color": "#c44", "ncommit": 10000, "never": 0, "hist": [[1, 0.0], [2, 0.0], [3, 0.0], [4, 0.0], [5, 0.0044], [6, 0.01], [7, 0.0157], [8, 0.0184], [9, 0.0176], [10, 0.0283], [11, 0.0588], [12, 0.1021], [13, 0.1358], [14, 0.1508], [15, 0.1301], [16, 0.1044], [17, 0.0734], [18, 0.0541], [19, 0.0319], [20, 0.0249], [21, 0.014], [22, 0.0098], [23, 0.0053], [24, 0.0034], [25, 0.0026], [26, 0.0006], [27, 0.0007], [28, 0.0013], [29, 0.0002], [30, 0.0001], [31, 0.0006], [32, 0.0002], [33, 0.0001], [34, 0.0001], [35, 0.0001], [36, 0.0001], [37, 0.0], [38, 0.0], [39, 0.0], [40, 0.0], [41, 0.0], [42, 0.0], [43, 0.0], [44, 0.0], [45, 0.0], [46, 0.0], [47, 0.0001]], "cdf": [[1, 0.0], [2, 0.0], [3, 0.0], [4, 0.0], [5, 0.0044], [6, 0.0144], [7, 0.0301], [8, 0.0485], [9, 0.0661], [10, 0.0944], [11, 0.1532], [12, 0.2553], [13, 0.3911], [14, 0.5419], [15, 0.672], [16, 0.7764], [17, 0.8498], [18, 0.9039], [19, 0.9358], [20, 0.9607], [21, 0.9747], [22, 0.9845], [23, 0.9898], [24, 0.9932], [25, 0.9958], [26, 0.9964], [27, 0.9971], [28, 0.9984], [29, 0.9986], [30, 0.9987], [31, 0.9993], [32, 0.9995], [33, 0.9996], [34, 0.9997], [35, 0.9998], [36, 0.9999], [37, 0.9999], [38, 0.9999], [39, 0.9999], [40, 0.9999], [41, 0.9999], [42, 0.9999], [43, 0.9999], [44, 0.9999], [45, 0.9999], [46, 0.9999], [47, 1.0]], "buckets": [0.0944, 0.5776, 0.2887, 0.0393], "box": {"min": 5, "max": 47, "p10": 11.0, "q1": 12.0, "med": 14.0, "q3": 16.0, "p90": 18.0, "mean": 14.378}}, {"name": "moe t0", "color": "#36c", "ncommit": 10000, "never": 0, "hist": [[1, 0.0], [2, 0.0], [3, 0.0], [4, 0.0], [5, 0.0023], [6, 0.0105], [7, 0.0153], [8, 0.0182], [9, 0.0151], [10, 0.0142], [11, 0.026], [12, 0.0538], [13, 0.0966], [14, 0.132], [15, 0.1386], [16, 0.139], [17, 0.1107], [18, 0.0756], [19, 0.05], [20, 0.0375], [21, 0.0224], [22, 0.016], [23, 0.0088], [24, 0.0052], [25, 0.0038], [26, 0.0023], [27, 0.0018], [28, 0.0014], [29, 0.0008], [30, 0.0003], [31, 0.0005], [32, 0.0004], [33, 0.0005], [34, 0.0], [35, 0.0], [36, 0.0002], [37, 0.0], [38, 0.0002], [39, 0.0], [40, 0.0], [41, 0.0], [42, 0.0], [43, 0.0], [44, 0.0], [45, 0.0], [46, 0.0], [47, 0.0]], "cdf": [[1, 0.0], [2, 0.0], [3, 0.0], [4, 0.0], [5, 0.0023], [6, 0.0128], [7, 0.0281], [8, 0.0463], [9, 0.0614], [10, 0.0756], [11, 0.1016], [12, 0.1554], [13, 0.252], [14, 0.384], [15, 0.5226], [16, 0.6616], [17, 0.7723], [18, 0.8479], [19, 0.8979], [20, 0.9354], [21, 0.9578], [22, 0.9738], [23, 0.9826], [24, 0.9878], [25, 0.9916], [26, 0.9939], [27, 0.9957], [28, 0.9971], [29, 0.9979], [30, 0.9982], [31, 0.9987], [32, 0.9991], [33, 0.9996], [34, 0.9996], [35, 0.9996], [36, 0.9998], [37, 0.9998], [38, 1.0], [39, 1.0], [40, 1.0], [41, 1.0], [42, 1.0], [43, 1.0], [44, 1.0], [45, 1.0], [46, 1.0], [47, 1.0]], "buckets": [0.0756, 0.447, 0.4128, 0.0646], "box": {"min": 5, "max": 38, "p10": 11.0, "q1": 13.0, "med": 15.0, "q3": 17.0, "p90": 20.0, "mean": 15.37}}, {"name": "moe t0.6", "color": "#e6a000", "ncommit": 10000, "never": 0, "hist": [[1, 0.0], [2, 0.0], [3, 0.0], [4, 0.0], [5, 0.0018], [6, 0.01], [7, 0.0153], [8, 0.0193], [9, 0.0155], [10, 0.0147], [11, 0.0229], [12, 0.0553], [13, 0.0939], [14, 0.132], [15, 0.1508], [16, 0.1354], [17, 0.1065], [18, 0.0781], [19, 0.0501], [20, 0.0339], [21, 0.0237], [22, 0.0132], [23, 0.0105], [24, 0.0052], [25, 0.004], [26, 0.0018], [27, 0.0014], [28, 0.002], [29, 0.0006], [30, 0.0006], [31, 0.0002], [32, 0.0], [33, 0.0005], [34, 0.0002], [35, 0.0002], [36, 0.0001], [37, 0.0001], [38, 0.0001], [39, 0.0], [40, 0.0001], [41, 0.0], [42, 0.0], [43, 0.0], [44, 0.0], [45, 0.0], [46, 0.0], [47, 0.0]], "cdf": [[1, 0.0], [2, 0.0], [3, 0.0], [4, 0.0], [5, 0.0018], [6, 0.0118], [7, 0.0271], [8, 0.0464], [9, 0.0619], [10, 0.0766], [11, 0.0995], [12, 0.1548], [13, 0.2487], [14, 0.3807], [15, 0.5315], [16, 0.6669], [17, 0.7734], [18, 0.8515], [19, 0.9016], [20, 0.9355], [21, 0.9592], [22, 0.9724], [23, 0.9829], [24, 0.9881], [25, 0.9921], [26, 0.9939], [27, 0.9953], [28, 0.9973], [29, 0.9979], [30, 0.9985], [31, 0.9987], [32, 0.9987], [33, 0.9992], [34, 0.9994], [35, 0.9996], [36, 0.9997], [37, 0.9998], [38, 0.9999], [39, 0.9999], [40, 1.0], [41, 1.0], [42, 1.0], [43, 1.0], [44, 1.0], [45, 1.0], [46, 1.0], [47, 1.0]], "buckets": [0.0766, 0.4549, 0.404, 0.0645], "box": {"min": 5, "max": 40, "p10": 12.0, "q1": 14.0, "med": 15.0, "q3": 17.0, "p90": 19.0, "mean": 15.358}}];
+const META = {"maxStep": 47, "bucketLabels": ["1-10", "11-15", "16-20", "21+"]};
+const W = 1000, PADL = 56, PADR = 24, PADT = 16, PADB = 40;
+const SVGNS = "http://www.w3.org/2000/svg";
+function el(n, a) { const e = document.createElementNS(SVGNS, n);
+  for (const k in a) e.setAttribute(k, a[k]); return e; }
+function svgIn(id, h) { const s = el("svg", {width:W, height:h,
+  viewBox:"0 0 "+W+" "+h}); document.getElementById(id).appendChild(s); return s; }
+
+const maxStep = META.maxStep;
+function xStep(s, PW) { return PADL + (maxStep<=1?0:(s-1)/(maxStep-1))*PW; }
+
+// ---- summary table ----
+(function() {
+  let html = "<table><tr><th>variant</th><th>n committed</th><th>never-commit</th>"
+    +"<th>mean</th><th>median</th><th>p10</th><th>p90</th><th>min</th><th>max</th></tr>";
+  for (const v of VARIANTS) { const b=v.box;
+    html += "<tr><td style='text-align:left'><span class='sw' style='background:"
+      +v.color+"'></span>"+v.name+"</td><td>"+v.ncommit+"</td><td>"+v.never
+      +" ("+(v.never/(v.ncommit+v.never)*100).toFixed(1)+"%)</td>"
+      +(b?("<td>"+b.mean+"</td><td>"+b.med+"</td><td>"+b.p10+"</td><td>"+b.p90
+      +"</td><td>"+b.min+"</td><td>"+b.max+"</td>"):"<td colspan=6>-</td>")+"</tr>";
+  }
+  document.getElementById('summary').innerHTML = html + "</table>";
+})();
+
+function axes(svg, H, PW, yMax, yfmt, xlabel, ylabel) {
+  for (let i=0;i<=5;i++) { const y=PADT+(i/5)*(H-PADT-PADB), v=yMax*(1-i/5);
+    svg.appendChild(el("line",{class:"grid",x1:PADL,y1:y,x2:W-PADR,y2:y}));
+    const l=el("text",{class:"ax-lbl",x:PADL-6,y:y+3,"text-anchor":"end"});
+    l.textContent=yfmt(v); svg.appendChild(l); }
+  const sg=Math.ceil((maxStep-1)/14)||1;
+  for (let s=1;s<=maxStep;s+=sg) { const x=xStep(s,PW);
+    svg.appendChild(el("line",{class:"grid",x1:x,y1:PADT,x2:x,y2:H-PADB}));
+    const l=el("text",{class:"ax-lbl",x:x,y:H-PADB+14,"text-anchor":"middle"});
+    l.textContent=s; svg.appendChild(l); }
+  svg.appendChild(el("line",{class:"axis",x1:PADL,y1:PADT,x2:PADL,y2:H-PADB}));
+  svg.appendChild(el("line",{class:"axis",x1:PADL,y1:H-PADB,x2:W-PADR,y2:H-PADB}));
+  const xt=el("text",{class:"ax-lbl",x:PADL+PW/2,y:H-4,"text-anchor":"middle"});
+  xt.textContent=xlabel; svg.appendChild(xt);
+  const yt=el("text",{class:"ax-lbl",x:13,y:PADT+(H-PADT-PADB)/2,"text-anchor":"middle",
+    transform:"rotate(-90 13 "+(PADT+(H-PADT-PADB)/2)+")"});
+  yt.textContent=ylabel; svg.appendChild(yt);
+}
+
+// ---- 1. histogram overlay ----
+(function() {
+  const H=300, PW=W-PADL-PADR; const svg=svgIn('hist',H);
+  let yMax=0; for (const v of VARIANTS) for (const d of v.hist) if(d[1]>yMax)yMax=d[1];
+  yMax=yMax*1.1||1;
+  axes(svg,H,PW,yMax,x=>(x*100).toFixed(1)+"%","finish step","fraction");
+  const yS=v=>PADT+(1-v/yMax)*(H-PADT-PADB);
+  for (const v of VARIANTS) { if(!v.hist.length) continue;
+    const d=v.hist.map((p,i)=>(i?"L":"M")+xStep(p[0],PW).toFixed(1)+" "+yS(p[1]).toFixed(1)).join(" ");
+    svg.appendChild(el("path",{d:d,fill:"none",stroke:v.color,"stroke-width":2})); }
+})();
+
+// ---- 2. bucketed grouped bars ----
+(function() {
+  const H=280, PW=W-PADL-PADR; const svg=svgIn('bucket',H);
+  const labels=META.bucketLabels, nb=labels.length, nv=VARIANTS.length;
+  let yMax=0; for (const v of VARIANTS) for (const f of v.buckets) if(f>yMax)yMax=f;
+  yMax=yMax*1.1||1;
+  const yS=v=>PADT+(1-v/yMax)*(H-PADT-PADB);
+  for (let i=0;i<=5;i++) { const y=PADT+(i/5)*(H-PADT-PADB), val=yMax*(1-i/5);
+    svg.appendChild(el("line",{class:"grid",x1:PADL,y1:y,x2:W-PADR,y2:y}));
+    const l=el("text",{class:"ax-lbl",x:PADL-6,y:y+3,"text-anchor":"end"});
+    l.textContent=(val*100).toFixed(0)+"%"; svg.appendChild(l); }
+  svg.appendChild(el("line",{class:"axis",x1:PADL,y1:PADT,x2:PADL,y2:H-PADB}));
+  svg.appendChild(el("line",{class:"axis",x1:PADL,y1:H-PADB,x2:W-PADR,y2:H-PADB}));
+  const gw=PW/nb, bw=gw*0.8/nv;
+  for (let bi=0;bi<nb;bi++) {
+    const gx=PADL+bi*gw+gw*0.1;
+    for (let vi=0;vi<nv;vi++) { const f=VARIANTS[vi].buckets[bi], x=gx+vi*bw;
+      svg.appendChild(el("rect",{x:x,y:yS(f),width:bw*0.92,height:(H-PADB)-yS(f),
+        fill:VARIANTS[vi].color})); }
+    const l=el("text",{class:"ax-lbl",x:PADL+bi*gw+gw/2,y:H-PADB+14,"text-anchor":"middle"});
+    l.textContent="step "+labels[bi]; svg.appendChild(l);
+  }
+  const yt=el("text",{class:"ax-lbl",x:13,y:PADT+(H-PADT-PADB)/2,"text-anchor":"middle",
+    transform:"rotate(-90 13 "+(PADT+(H-PADT-PADB)/2)+")"});
+  yt.textContent="fraction of canvases"; svg.appendChild(yt);
+})();
+
+// ---- 3. box plot (horizontal, one row per variant) ----
+(function() {
+  const nv=VARIANTS.length, H=40+nv*46, PW=W-PADL-PADR; const svg=svgIn('box',H);
+  const xS=s=>PADL+(maxStep<=1?0:(s-1)/(maxStep-1))*PW;
+  const sg=Math.ceil((maxStep-1)/14)||1;
+  for (let s=1;s<=maxStep;s+=sg) { const x=xS(s);
+    svg.appendChild(el("line",{class:"grid",x1:x,y1:PADT,x2:x,y2:H-PADB}));
+    const l=el("text",{class:"ax-lbl",x:x,y:H-PADB+14,"text-anchor":"middle"});
+    l.textContent=s; svg.appendChild(l); }
+  svg.appendChild(el("line",{class:"axis",x1:PADL,y1:H-PADB,x2:W-PADR,y2:H-PADB}));
+  VARIANTS.forEach((v,i)=>{ const b=v.box; if(!b) return;
+    const cy=PADT+22+i*46, h=22;
+    // whisker p10..p90
+    svg.appendChild(el("line",{x1:xS(b.p10),y1:cy,x2:xS(b.p90),y2:cy,
+      stroke:v.color,"stroke-width":1}));
+    svg.appendChild(el("line",{x1:xS(b.p10),y1:cy-5,x2:xS(b.p10),y2:cy+5,stroke:v.color}));
+    svg.appendChild(el("line",{x1:xS(b.p90),y1:cy-5,x2:xS(b.p90),y2:cy+5,stroke:v.color}));
+    // IQR box
+    svg.appendChild(el("rect",{x:xS(b.q1),y:cy-h/2,width:Math.max(1,xS(b.q3)-xS(b.q1)),
+      height:h,fill:v.color,"fill-opacity":0.25,stroke:v.color}));
+    // median
+    svg.appendChild(el("line",{x1:xS(b.med),y1:cy-h/2,x2:xS(b.med),y2:cy+h/2,
+      stroke:v.color,"stroke-width":2}));
+    // mean dot
+    svg.appendChild(el("circle",{cx:xS(b.mean),cy:cy,r:3,fill:"#222"}));
+    const lbl=el("text",{class:"ax-lbl",x:PADL+4,y:cy-h/2-3,fill:v.color});
+    lbl.textContent=v.name+"  med "+b.med+"  IQR "+b.q1+"-"+b.q3; svg.appendChild(lbl);
+  });
+  const xt=el("text",{class:"ax-lbl",x:PADL+PW/2,y:H-4,"text-anchor":"middle"});
+  xt.textContent="finish step"; svg.appendChild(xt);
+})();
+
+// ---- 4. CDF overlay ----
+(function() {
+  const H=300, PW=W-PADL-PADR; const svg=svgIn('cdf',H);
+  axes(svg,H,PW,1,x=>x.toFixed(1),"denoising step","fraction finished");
+  const yS=v=>PADT+(1-v)*(H-PADT-PADB);
+  for (const v of VARIANTS) { if(!v.cdf.length) continue;
+    const d=v.cdf.map((p,i)=>(i?"L":"M")+xStep(p[0],PW).toFixed(1)+" "+yS(p[1]).toFixed(1)).join(" ");
+    svg.appendChild(el("path",{d:d,fill:"none",stroke:v.color,"stroke-width":2})); }
+})();
+</script></body></html>

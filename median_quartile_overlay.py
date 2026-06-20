@@ -1,110 +1,65 @@
 #!/usr/bin/env python3
-"""Overlay meanH-vs-step for bf16, mxfp4, and mixed-precision across many canvases.
+"""Overlay median-meanH-vs-step with quantile bands across many canvases.
 
-Each method's JSONL holds confidence records from MANY generations (50 prompts x
-several seeds). Records are grouped by req_id (one req_id == one canvas/denoising
-trajectory); for each method we average mean_entropy per step across all canvases
-and draw the mean line with a shaded +/-1 sigma band. Self-contained HTML: inline
-SVG drawn by JS, log-y toggle, hover readout. No external libraries.
+A robust alternative to meanh_overlay.py. Mean +/- 1 sigma is misleading for this
+data: per-step entropy is right-skewed and bounded at 0, so the mean is dragged up
+by a few stubborn canvases and the lower sigma band clips at 0. Here we draw the
+MEDIAN line with a p25-p75 (interquartile) band and an outer p10-p90 band, which
+never clip nonsensically and show the true spread.
+
+Reuses load_by_canvas from meanh_overlay.py (identical canvas/step-reset parsing)
+so this is purely an aggregation change -- no re-collection needed.
 
 Usage:
-  ./meanh_overlay.py runs/meanh50/bf16.jsonl runs/meanh50/mxfp4.jsonl \
-      runs/meanh50/mixedprec.jsonl -o runs/meanh50/meanh_overlay.html
+  ./median_quartile_overlay.py bf16=runs/meanh50/bf16.jsonl \
+      mxfp4=runs/meanh50/mxfp4.jsonl -o runs/meanh50/median_quartile.html
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 
-
-def load_by_canvas(path: str) -> dict[str, dict[int, float]]:
-    """Load a probe JSONL into {req_id: {step: mean_entropy}}.
-
-    Each req_id is one canvas (one generation). A request that is re-run reuses a
-    fresh req_id, so distinct trajectories never collide.
-
-    Records arrive in emission order. A canvas's denoising trajectory is the
-    initial run of strictly increasing steps; after it converges the probe emits
-    a final commit pass that RESETS the step counter (a record whose step is <=
-    the previous one, e.g. ``step=0 committing=True`` then ``step=1``). Those
-    trailing records are a separate phase, not part of the convergence curve, and
-    they collide on (req_id, step) with the real early steps. We therefore keep
-    only the first monotonic run per canvas and drop everything from the first
-    step reset onward, so the trailing ``step=1`` cannot clobber the real one.
-    """
-    canvases: dict[str, dict[int, float]] = {}
-    last_step: dict[str, int] = {}
-    done: set[str] = set()
-    conf = None
-    with open(path) as f:
-        for line in f:
-            line = line.strip().strip("\x00")
-            if not line.startswith("{"):
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            rid = rec.get("req_id", "?")
-            if rid.startswith("_warmup"):
-                continue
-            if conf is None:
-                conf = rec.get("confidence_threshold")
-            if rid in done:
-                continue
-            step = rec["step"]
-            if rid in last_step and step <= last_step[rid]:
-                # Step counter reset: the convergence run is over; ignore the
-                # trailing commit-pass records for this canvas.
-                done.add(rid)
-                continue
-            last_step[rid] = step
-            canvases.setdefault(rid, {})[step] = float(rec.get("mean_entropy", 0.0))
-    return canvases, conf
+from meanh_overlay import PALETTE, _default_label, load_by_canvas
 
 
-def per_canvas_lines(canvases: dict[str, dict[int, float]]):
-    """Each canvas as its own step-sorted polyline ``[[step, val], ...]``.
+def quantile(sorted_vals: list[float], q: float) -> float:
+    """Linear-interpolated quantile of an already-sorted list. q in [0,1]."""
+    n = len(sorted_vals)
+    if n == 0:
+        return 0.0
+    if n == 1:
+        return sorted_vals[0]
+    pos = q * (n - 1)
+    lo = int(pos)
+    hi = min(lo + 1, n - 1)
+    frac = pos - lo
+    return sorted_vals[lo] * (1 - frac) + sorted_vals[hi] * frac
 
-    Returns a list of polylines (one per canvas) for the spaghetti view, in the
-    same canvas order as the input dict so colors/order stay stable.
-    """
-    lines = []
-    for traj in canvases.values():
-        lines.append([[s, round(traj[s], 5)] for s in sorted(traj)])
-    return lines
 
+def aggregate_quantiles(canvases: dict[str, dict[int, float]]):
+    """Per step, median + quartile/decile bands across canvases.
 
-def aggregate(canvases: dict[str, dict[int, float]]):
-    """Per step, mean and stddev of mean_entropy across canvases.
-
-    Returns (mean_series, lo_series, hi_series) as [[step, value], ...], where
-    lo/hi are mean -/+ 1 stddev (clamped at 0).
+    Returns (med, q25, q75, q10, q90) each as [[step, value], ...].
     """
     by_step: dict[int, list[float]] = {}
     for traj in canvases.values():
         for step, val in traj.items():
             by_step.setdefault(step, []).append(val)
-    mean_s, lo_s, hi_s = [], [], []
+    med, q25, q75, q10, q90 = [], [], [], [], []
     for step in sorted(by_step):
-        vals = by_step[step]
-        mu = sum(vals) / len(vals)
-        if len(vals) > 1:
-            var = sum((v - mu) ** 2 for v in vals) / (len(vals) - 1)
-            sd = math.sqrt(var)
-        else:
-            sd = 0.0
-        mean_s.append([step, round(mu, 5)])
-        lo_s.append([step, round(max(0.0, mu - sd), 5)])
-        hi_s.append([step, round(mu + sd, 5)])
-    return mean_s, lo_s, hi_s
+        vals = sorted(by_step[step])
+        med.append([step, round(quantile(vals, 0.50), 5)])
+        q25.append([step, round(quantile(vals, 0.25), 5)])
+        q75.append([step, round(quantile(vals, 0.75), 5)])
+        q10.append([step, round(quantile(vals, 0.10), 5)])
+        q90.append([step, round(quantile(vals, 0.90), 5)])
+    return med, q25, q75, q10, q90
 
 
 TEMPLATE = """<!doctype html>
-<html><head><meta charset="utf-8"><title>diffgemma meanH overlay</title>
+<html><head><meta charset="utf-8"><title>diffgemma median/quartile overlay</title>
 <style>
   body {{ font-family: monospace; margin: 16px; background:#fafafa; color:#222; }}
   h3 {{ margin:6px 0; }}
@@ -119,36 +74,37 @@ TEMPLATE = """<!doctype html>
   .thr {{ stroke:#e6a000; stroke-width:1; stroke-dasharray:4 3; }}
   .ax-lbl {{ font-size:11px; fill:#666; }}
 </style></head><body>
-  <h3>mean token entropy per denoising step ({ncanvas} canvases/method)</h3>
+  <h3>median token entropy per denoising step ({ncanvas} canvases/method)</h3>
   <div class="legend">
     {legend_html}
     <span class="sw" style="background:#e6a000"></span>commit threshold ({conf_disp})
     <label class="legend"><input type="checkbox" id="logy"> log y-axis</label>
-    <label class="legend"><input type="checkbox" id="band" checked> +/-1 sigma band</label>
-    <label class="legend"><input type="checkbox" id="percanvas"> per-canvas lines</label>
+    <label class="legend"><input type="checkbox" id="iqr" checked> p25-p75 band</label>
+    <label class="legend"><input type="checkbox" id="deciles"> p10-p90 band</label>
   </div>
   <div id="chart"></div>
   <div id="readout">&nbsp;</div>
 <script>
-// each: {{mean:[[step,v]...], lo:[...], hi:[...], color:"#..", name:".."}}
+// each: {{med:[[step,v]...], q25, q75, q10, q90, color:"#..", name:".."}}
 const SERIES = {series_json};
 const CONF = {conf};
 const W = 980, H = 500, PADL = 64, PADR = 20, PADT = 20, PADB = 44;
 const PW = W - PADL - PADR, PH = H - PADT - PADB;
 
-let logY = false, showBand = true, perCanvas = false;
-const allSteps = [], allVals = [];
+let logY = false, showIQR = true, showDeciles = false;
+let xMin = Infinity, xMax = -Infinity, yMaxRaw = CONF, yMinPos = Infinity;
+const noteV = v => {{
+  if (v > yMaxRaw) yMaxRaw = v;
+  if (v > 0 && v < yMinPos) yMinPos = v;
+}};
+const noteX = x => {{ if (x < xMin) xMin = x; if (x > xMax) xMax = x; }};
 for (const s of SERIES) {{
-  for (const d of s.hi) {{ allSteps.push(d[0]); allVals.push(d[1]); }}
-  for (const d of s.lo) {{ allVals.push(d[1]); }}
-  for (const ln of (s.lines || [])) {{
-    for (const d of ln) {{ allSteps.push(d[0]); allVals.push(d[1]); }}
-  }}
+  for (const d of s.q90) {{ noteX(d[0]); noteV(d[1]); }}
+  for (const d of s.q10) {{ noteV(d[1]); }}
 }}
-const xMin = Math.min(...allSteps), xMax = Math.max(...allSteps);
-const yMaxRaw = Math.max(...allVals, CONF);
-const posVals = allVals.concat([CONF]).filter(v => v > 0);
-const yMinPos = posVals.length ? Math.min(...posVals) : 1e-6;
+if (CONF > 0 && CONF < yMinPos) yMinPos = CONF;
+if (!isFinite(yMinPos)) yMinPos = 1e-6;
+if (!isFinite(xMin)) {{ xMin = 0; xMax = 1; }}
 
 const xScale = s => PADL + (xMax === xMin ? 0 : (s - xMin) / (xMax - xMin) * PW);
 function yScale(v) {{
@@ -227,30 +183,27 @@ function draw() {{
   xt.textContent = "denoising step"; svg.appendChild(xt);
   const yt = el("text", {{class:"ax-lbl", x:14, y:PADT+PH/2,
     "text-anchor":"middle", transform:"rotate(-90 14 " + (PADT+PH/2) + ")"}});
-  yt.textContent = "mean token entropy"; svg.appendChild(yt);
+  yt.textContent = "token entropy (median)"; svg.appendChild(yt);
   if (!(logY && CONF <= 0)) {{
     const yT = yScale(CONF);
     svg.appendChild(el("line", {{class:"thr", x1:PADL, y1:yT, x2:W-PADR, y2:yT}}));
   }}
-  if (showBand && !perCanvas) {{
+  if (showDeciles) {{
     for (const s of SERIES) {{
-      svg.appendChild(el("path", {{d:bandPath(s.lo, s.hi), fill:hexA(s.color, 0.13),
+      svg.appendChild(el("path", {{d:bandPath(s.q10, s.q90), fill:hexA(s.color, 0.08),
         stroke:"none"}}));
     }}
   }}
-  if (perCanvas) {{
+  if (showIQR) {{
     for (const s of SERIES) {{
-      for (const ln of (s.lines || [])) {{
-        if (ln.length < 2) continue;
-        svg.appendChild(el("path", {{d:linePath(ln), fill:"none",
-          stroke:hexA(s.color, 0.45), "stroke-width":1}}));
-      }}
+      svg.appendChild(el("path", {{d:bandPath(s.q25, s.q75), fill:hexA(s.color, 0.15),
+        stroke:"none"}}));
     }}
   }}
   for (const s of SERIES) {{
-    svg.appendChild(el("path", {{d:linePath(s.mean), fill:"none", stroke:s.color,
+    svg.appendChild(el("path", {{d:linePath(s.med), fill:"none", stroke:s.color,
       "stroke-width":2}}));
-    for (const d of s.mean) {{
+    for (const d of s.med) {{
       svg.appendChild(el("circle", {{cx:xScale(d[0]), cy:yScale(d[1]), r:2,
         fill:s.color}}));
     }}
@@ -275,9 +228,9 @@ function draw() {{
     let parts = [];
     let step = "-";
     for (const s of SERIES) {{
-      const p = nearest(s.mean, sx);
+      const p = nearest(s.med, sx);
       if (p) step = p[0];
-      parts.push("<span style='color:" + s.color + "'>" + s.name + " meanH=" +
+      parts.push("<span style='color:" + s.color + "'>" + s.name + " med=" +
         (p ? p[1] : "-") + "</span>");
     }}
     ro.innerHTML = "step " + step + " &nbsp; " + parts.join(" &nbsp; ");
@@ -290,48 +243,33 @@ function draw() {{
 document.getElementById('logy').addEventListener('change', e => {{
   logY = e.target.checked; draw();
 }});
-document.getElementById('band').addEventListener('change', e => {{
-  showBand = e.target.checked; draw();
+document.getElementById('iqr').addEventListener('change', e => {{
+  showIQR = e.target.checked; draw();
 }});
-document.getElementById('percanvas').addEventListener('change', e => {{
-  perCanvas = e.target.checked; draw();
+document.getElementById('deciles').addEventListener('change', e => {{
+  showDeciles = e.target.checked; draw();
 }});
 draw();
 </script></body></html>
 """
 
 
-# Distinct, reasonably colorblind-friendly palette; cycles if more series.
-PALETTE = ["#2a7", "#c44", "#36c", "#e6a000", "#7a3", "#93c", "#0aa", "#c63"]
-
-
-def _default_label(path: str) -> str:
-    """Derive a legend label from a JSONL path (basename minus .jsonl)."""
-    base = os.path.basename(path)
-    return base[:-6] if base.endswith(".jsonl") else base
-
-
 def main() -> None:
     ap = argparse.ArgumentParser(
-        description="Overlay meanH-vs-step for any number of methods.")
+        description="Overlay median + quantile bands of meanH-vs-step.")
     ap.add_argument("inputs", nargs="+",
-                    help="one or more meanH JSONLs. Each may be 'label=path' to "
-                         "set its legend label, or just 'path' (label defaults "
-                         "to the filename). Any number of series is supported.")
+                    help="one or more meanH JSONLs, each 'label=path' or 'path'.")
     ap.add_argument("-o", "--out", default=None,
-                    help="output HTML (default meanh_overlay.html next to the "
+                    help="output HTML (default median_quartile.html next to the "
                          "first input)")
     ap.add_argument("-n", "--limit", type=int, default=None,
-                    help="use only the first N canvases of each method (matched "
-                         "prompt order). Default: auto = min canvas count across "
-                         "methods. Pass 0 to use all canvases per method.")
+                    help="use only the first N canvases of each method. Default: "
+                         "auto = min canvas count across methods. 0 = all.")
     ap.add_argument("--labels", default=None,
-                    help="comma-separated legend labels overriding the per-input "
+                    help="comma-separated legend labels overriding per-input "
                          "labels, in input order")
     args = ap.parse_args()
 
-    # Parse each input as optional 'label=path'. A bare path keeps its filename
-    # as the label. Note: split on the FIRST '=' so paths with '=' still work.
     paths, names = [], []
     for tok in args.inputs:
         if "=" in tok and not os.path.exists(tok):
@@ -358,9 +296,6 @@ def main() -> None:
             conf = c
         loaded.append((name, color, canvases))
 
-    # Match the canvas set across methods so the comparison is apples-to-apples:
-    # the driver loops prompt-outer/seed-inner, so the first N req_ids of each
-    # method correspond to the same N prompts. limit<None auto-picks min count.
     counts = [len(c) for _, _, c in loaded]
     if args.limit is None:
         limit = min(counts)
@@ -369,8 +304,7 @@ def main() -> None:
     else:
         limit = args.limit
     if limit is not None and min(counts) != max(counts) and args.limit != 0:
-        print(f"matching to first {limit} canvases/method "
-              f"(raw counts: {counts})")
+        print(f"matching to first {limit} canvases/method (raw counts: {counts})")
 
     series = []
     ncanvas = 0
@@ -379,12 +313,11 @@ def main() -> None:
         if limit is not None:
             used = dict(list(canvases.items())[:limit])
         ncanvas = max(ncanvas, len(used))
-        mean_s, lo_s, hi_s = aggregate(used)
-        series.append({"name": name, "color": color,
-                       "mean": mean_s, "lo": lo_s, "hi": hi_s,
-                       "lines": per_canvas_lines(used)})
-        print(f"{name}: {len(used)} canvases, "
-              f"{len(mean_s)} steps -> max step {mean_s[-1][0] if mean_s else '-'}")
+        med, q25, q75, q10, q90 = aggregate_quantiles(used)
+        series.append({"name": name, "color": color, "med": med,
+                       "q25": q25, "q75": q75, "q10": q10, "q90": q90})
+        print(f"{name}: {len(used)} canvases, {len(med)} steps -> "
+              f"max step {med[-1][0] if med else '-'}")
 
     if conf is None:
         conf = 0.0
@@ -392,7 +325,7 @@ def main() -> None:
         f'<span class="sw" style="background:{s["color"]}"></span>{s["name"]}'
         for s in series)
     out = args.out or os.path.join(
-        os.path.dirname(os.path.abspath(paths[0])), "meanh_overlay.html")
+        os.path.dirname(os.path.abspath(paths[0])), "median_quartile.html")
     with open(out, "w") as f:
         f.write(TEMPLATE.format(
             series_json=json.dumps(series),
@@ -401,7 +334,7 @@ def main() -> None:
             ncanvas=ncanvas,
             legend_html=legend_html,
         ))
-    print(f"meanH overlay -> {out}")
+    print(f"median/quartile overlay -> {out}")
 
 
 if __name__ == "__main__":

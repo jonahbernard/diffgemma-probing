@@ -1,0 +1,140 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>diffgemma commit fraction</title>
+<style>
+  body { font-family: monospace; margin: 16px; background:#fafafa; color:#222; }
+  h3 { margin:6px 0; }
+  .legend { font-size:12px; color:#555; margin-bottom:8px; }
+  .sw { display:inline-block; width:11px; height:11px; vertical-align:middle;
+         margin:0 3px 0 10px; border:1px solid #888; }
+  #readout { font-size:12px; color:#222; height:16px; margin-top:4px; }
+  label.legend { margin-left:12px; }
+  svg { background:#fff; border:1px solid #ddd; }
+  .grid { stroke:#eee; stroke-width:1; }
+  .axis { stroke:#888; stroke-width:1; }
+  .thr { stroke:#e6a000; stroke-width:1; stroke-dasharray:4 3; }
+  .ax-lbl { font-size:11px; fill:#666; }
+</style></head><body>
+  <h3>fraction of canvases committed (meanH &le; 0.005) per denoising step (4972 canvases/method)</h3>
+  <div class="legend">
+    <span class="sw" style="background:#2a7"></span>bf16 temp0
+    <span class="sw" style="background:#c44"></span>bf16 temp0.6
+    <span class="sw" style="background:#36c"></span>moe-fp4/mlp-bf16 temp0
+    <span class="sw" style="background:#e6a000"></span>moe-fp4/mlp-bf16 temp0.6
+    <label class="legend"><input type="checkbox" id="half" checked> 50% guide</label>
+  </div>
+  <div id="chart"></div>
+  <div id="readout">&nbsp;</div>
+<script>
+// each: {frac:[[step,f]...], color:"#..", name:".."}
+const SERIES = [{"name": "bf16 temp0", "color": "#2a7", "frac": [[1, 0.0], [2, 0.0], [3, 0.0], [4, 0.0], [5, 0.0008], [6, 0.00483], [7, 0.01327], [8, 0.02192], [9, 0.02997], [10, 0.04626], [11, 0.08769], [12, 0.1794], [13, 0.32039], [14, 0.4817], [15, 0.63134], [16, 0.75463], [17, 0.84131], [18, 0.89883], [19, 0.93725], [20, 0.96138], [21, 0.97526], [22, 0.98471], [23, 0.98974], [24, 0.99397], [25, 0.99598], [26, 0.99718], [27, 0.99779], [28, 0.99799], [29, 0.99839], [30, 0.99879], [31, 0.99879], [32, 0.99879], [33, 0.99879], [34, 0.99879], [35, 0.9994], [36, 0.9996], [37, 0.9996], [38, 1.0]]}, {"name": "bf16 temp0.6", "color": "#c44", "frac": [[1, 0.0], [2, 0.0], [3, 0.0], [4, 0.0], [5, 0.00181], [6, 0.00623], [7, 0.01549], [8, 0.02554], [9, 0.03379], [10, 0.04907], [11, 0.08769], [12, 0.17639], [13, 0.31637], [14, 0.47949], [15, 0.62912], [16, 0.75141], [17, 0.8393], [18, 0.89984], [19, 0.93544], [20, 0.9634], [21, 0.97767], [22, 0.98813], [23, 0.99256], [24, 0.99497], [25, 0.99638], [26, 0.99698], [27, 0.99759], [28, 0.99839], [29, 0.99839], [30, 0.99839], [31, 0.9992], [32, 0.9992], [33, 0.9992], [34, 0.9994], [35, 0.9996], [36, 0.9998], [37, 0.9998], [38, 0.9998], [39, 0.9998], [40, 0.9998], [41, 0.9998], [42, 0.9998], [43, 0.9998], [44, 0.9998], [45, 0.9998], [46, 0.9998], [47, 1.0]]}, {"name": "moe-fp4/mlp-bf16 temp0", "color": "#36c", "frac": [[1, 0.0], [2, 0.0], [3, 0.0], [4, 0.0], [5, 0.00101], [6, 0.00744], [7, 0.01448], [8, 0.02132], [9, 0.02836], [10, 0.0366], [11, 0.05491], [12, 0.09473], [13, 0.18222], [14, 0.31376], [15, 0.46802], [16, 0.61806], [17, 0.74517], [18, 0.82904], [19, 0.88737], [20, 0.93061], [21, 0.95253], [22, 0.97023], [23, 0.98109], [24, 0.98713], [25, 0.99155], [26, 0.99417], [27, 0.99578], [28, 0.99718], [29, 0.99779], [30, 0.99819], [31, 0.99899], [32, 0.99899], [33, 0.9996], [34, 0.9996], [35, 0.9996], [36, 1.0]]}, {"name": "moe-fp4/mlp-bf16 temp0.6", "color": "#e6a000", "frac": [[1, 0.0], [2, 0.0], [3, 0.0], [4, 0.0], [5, 0.00141], [6, 0.00583], [7, 0.01408], [8, 0.02313], [9, 0.03178], [10, 0.03922], [11, 0.0541], [12, 0.09895], [13, 0.18644], [14, 0.31537], [15, 0.47687], [16, 0.62349], [17, 0.75302], [18, 0.84212], [19, 0.89883], [20, 0.93363], [21, 0.95937], [22, 0.97305], [23, 0.98471], [24, 0.98854], [25, 0.99216], [26, 0.99336], [27, 0.99497], [28, 0.99698], [29, 0.99779], [30, 0.99859], [31, 0.99879], [32, 0.99879], [33, 0.99899], [34, 0.9992], [35, 0.9996], [36, 0.9996], [37, 0.9996], [38, 0.9998], [39, 0.9998], [40, 1.0]]}];
+const W = 980, H = 500, PADL = 64, PADR = 20, PADT = 20, PADB = 44;
+const PW = W - PADL - PADR, PH = H - PADT - PADB;
+
+let showHalf = true;
+let xMin = Infinity, xMax = -Infinity;
+for (const s of SERIES) {
+  for (const d of s.frac) { if (d[0] < xMin) xMin = d[0]; if (d[0] > xMax) xMax = d[0]; }
+}
+if (!isFinite(xMin)) { xMin = 0; xMax = 1; }
+// y axis is a fraction, fixed 0..1.
+const yMax = 1;
+
+const xScale = s => PADL + (xMax === xMin ? 0 : (s - xMin) / (xMax - xMin) * PW);
+const yScale = v => PADT + (1 - v / yMax) * PH;
+function linePath(series) {
+  return series.map((d, i) =>
+    (i ? "L" : "M") + xScale(d[0]).toFixed(1) + " " + yScale(d[1]).toFixed(1)
+  ).join(" ");
+}
+function ticksY() {
+  const out = [];
+  for (let i = 0; i <= 5; i++) out.push(i / 5);
+  return out;
+}
+function ticksX() {
+  const out = [], span = xMax - xMin, stepGuess = Math.ceil(span / 10) || 1;
+  for (let s = xMin; s <= xMax; s += stepGuess) out.push(s);
+  if (out[out.length - 1] !== xMax) out.push(xMax);
+  return out;
+}
+const SVGNS = "http://www.w3.org/2000/svg";
+function el(name, attrs) {
+  const n = document.createElementNS(SVGNS, name);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  return n;
+}
+let svg;
+function draw() {
+  const chart = document.getElementById('chart');
+  chart.innerHTML = "";
+  svg = el("svg", {width: W, height: H, viewBox: "0 0 " + W + " " + H});
+  for (const t of ticksY()) {
+    const y = yScale(t);
+    svg.appendChild(el("line", {class:"grid", x1:PADL, y1:y, x2:W-PADR, y2:y}));
+    const lbl = el("text", {class:"ax-lbl", x:PADL-6, y:y+3, "text-anchor":"end"});
+    lbl.textContent = t.toFixed(1);
+    svg.appendChild(lbl);
+  }
+  for (const t of ticksX()) {
+    const x = xScale(t);
+    svg.appendChild(el("line", {class:"grid", x1:x, y1:PADT, x2:x, y2:H-PADB}));
+    const lbl = el("text", {class:"ax-lbl", x:x, y:H-PADB+16, "text-anchor":"middle"});
+    lbl.textContent = t;
+    svg.appendChild(lbl);
+  }
+  svg.appendChild(el("line", {class:"axis", x1:PADL, y1:PADT, x2:PADL, y2:H-PADB}));
+  svg.appendChild(el("line", {class:"axis", x1:PADL, y1:H-PADB, x2:W-PADR, y2:H-PADB}));
+  const xt = el("text", {class:"ax-lbl", x:PADL+PW/2, y:H-6, "text-anchor":"middle"});
+  xt.textContent = "denoising step"; svg.appendChild(xt);
+  const yt = el("text", {class:"ax-lbl", x:14, y:PADT+PH/2,
+    "text-anchor":"middle", transform:"rotate(-90 14 " + (PADT+PH/2) + ")"});
+  yt.textContent = "fraction committed"; svg.appendChild(yt);
+  if (showHalf) {
+    const yH = yScale(0.5);
+    svg.appendChild(el("line", {class:"thr", x1:PADL, y1:yH, x2:W-PADR, y2:yH}));
+  }
+  for (const s of SERIES) {
+    svg.appendChild(el("path", {d:linePath(s.frac), fill:"none", stroke:s.color,
+      "stroke-width":2}));
+    for (const d of s.frac) {
+      svg.appendChild(el("circle", {cx:xScale(d[0]), cy:yScale(d[1]), r:2,
+        fill:s.color}));
+    }
+  }
+  const guide = el("line", {class:"axis", x1:0, y1:PADT, x2:0, y2:H-PADB,
+    stroke:"#bbb", "stroke-dasharray":"2 2", visibility:"hidden"});
+  svg.appendChild(guide);
+  const hit = el("rect", {x:PADL, y:PADT, width:PW, height:PH, fill:"transparent"});
+  svg.appendChild(hit);
+  const ro = document.getElementById('readout');
+  function nearest(series, sx) {
+    let best = null, bd = Infinity;
+    for (const d of series) { const dx = Math.abs(xScale(d[0]) - sx);
+      if (dx < bd) { bd = dx; best = d; } }
+    return best;
+  }
+  hit.addEventListener('mousemove', e => {
+    const r = svg.getBoundingClientRect();
+    const sx = (e.clientX - r.left) * (W / r.width);
+    guide.setAttribute('x1', sx); guide.setAttribute('x2', sx);
+    guide.setAttribute('visibility', 'visible');
+    let parts = [];
+    let step = "-";
+    for (const s of SERIES) {
+      const p = nearest(s.frac, sx);
+      if (p) step = p[0];
+      parts.push("<span style='color:" + s.color + "'>" + s.name + " " +
+        (p ? (p[1] * 100).toFixed(1) + "%" : "-") + "</span>");
+    }
+    ro.innerHTML = "step " + step + " &nbsp; " + parts.join(" &nbsp; ");
+  });
+  hit.addEventListener('mouseleave', () => {
+    guide.setAttribute('visibility', 'hidden'); ro.innerHTML = "&nbsp;";
+  });
+  chart.appendChild(svg);
+}
+document.getElementById('half').addEventListener('change', e => {
+  showHalf = e.target.checked; draw();
+});
+draw();
+</script></body></html>

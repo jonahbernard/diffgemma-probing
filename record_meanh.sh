@@ -13,6 +13,7 @@
 #   PROMPTS  prompt file, one prompt per line   (default prompts50.txt)
 #   SEEDS    space-separated seeds = canvases    (default "0")
 #   MAXTOK   max_tokens per request             (default 256)
+#   TEMP     sampling temperature               (default 0)
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 
@@ -23,8 +24,15 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 PROMPTS=${PROMPTS:-$HERE/prompts50.txt}
 SEEDS=${SEEDS:-0}
 MAXTOK=${MAXTOK:-256}
+TEMP=${TEMP:-0}
 
 mkdir -p "$(dirname "$OUT")"
+
+# Ensure LIVE (and its dir) exist before we read its size. The `< "$LIVE"`
+# redirection below fails outright on a missing file -- the `|| echo 0` can't
+# catch a redirection error -- so create an empty one if the server hasn't yet.
+mkdir -p "$(dirname "$LIVE")"
+[ -e "$LIVE" ] || : > "$LIVE"
 
 # The server holds LIVE open; truncating it here would punch a sparse hole (the
 # server keeps writing at its old offset). Snapshot only bytes appended by this run.
@@ -34,13 +42,13 @@ n=0
 while IFS= read -r PROMPT || [ -n "$PROMPT" ]; do
   [ -z "$PROMPT" ] && continue
   for SEED in $SEEDS; do
-    REQ=$(PROMPT="$PROMPT" MODEL="$MODEL" SEED="$SEED" MAXTOK="$MAXTOK" python3 -c '
+    REQ=$(PROMPT="$PROMPT" MODEL="$MODEL" SEED="$SEED" MAXTOK="$MAXTOK" TEMP="$TEMP" python3 -c '
 import json, os
 print(json.dumps({
     "model": os.environ["MODEL"],
     "messages": [{"role": "user", "content": os.environ["PROMPT"]}],
     "max_tokens": int(os.environ["MAXTOK"]),
-    "temperature": 0, "seed": int(os.environ["SEED"]),
+    "temperature": float(os.environ["TEMP"]), "seed": int(os.environ["SEED"]),
 }))')
     curl -s "http://localhost:${PORT}/v1/chat/completions" \
       -H 'Content-Type: application/json' -d "$REQ" >/dev/null

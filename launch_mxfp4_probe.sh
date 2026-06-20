@@ -14,8 +14,11 @@ export PYTHONPATH=/app/aiter-jonah
 export VLLM_ROCM_USE_AITER=1
 export VLLM_ROCM_USE_AITER_MOE=1
 export GPU_ARCHS=gfx950
-export HIP_VISIBLE_DEVICES=${HIP_VISIBLE_DEVICES:-3}
+export HIP_VISIBLE_DEVICES=${HIP_VISIBLE_DEVICES:-6}
 export VLLM_LOGGING_LEVEL=INFO
+# One server per GPU: port = 8000 + GPU index (GPU 6 -> 8006, GPU 7 -> 8007).
+GPU=${HIP_VISIBLE_DEVICES}
+PORT=${PORT:-$((8000 + GPU))}
 cd /app/vllm-jonah
 exec vllm serve /app/models/diffusiongemma-26B-A4B-it-mxfp4-v4 \
   --served-model-name diffgemma-mxfp4 \
@@ -31,4 +34,4 @@ exec vllm serve /app/models/diffusiongemma-26B-A4B-it-mxfp4-v4 \
   --attention-backend TRITON_ATTN \
   --moe-backend aiter \
   --quantization-config '{"moe": {"activation": "mxfp4"}}' \
-  --port ${PORT:-8003}
+  --port "$PORT"

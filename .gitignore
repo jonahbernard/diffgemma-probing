@@ -1,6 +1,13 @@
 # Traces / probe dumps — too big for the repo (multi-GB confidence + activation JSONL)
 *.jsonl
 
+# Profiler trace output — large binary dumps, not source
+*.pt.trace.json.gz
+profiler_out_*.txt
+
+# Editor/backup files
+*.bak
+
 # Generated animations
 *.gif
 

@@ -1,0 +1,198 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>diffgemma meanH overlay</title>
+<style>
+  body { font-family: monospace; margin: 16px; background:#fafafa; color:#222; }
+  h3 { margin:6px 0; }
+  .legend { font-size:12px; color:#555; margin-bottom:8px; }
+  .sw { display:inline-block; width:11px; height:11px; vertical-align:middle;
+         margin:0 3px 0 10px; border:1px solid #888; }
+  #readout { font-size:12px; color:#222; height:16px; margin-top:4px; }
+  label.legend { margin-left:12px; }
+  svg { background:#fff; border:1px solid #ddd; }
+  .grid { stroke:#eee; stroke-width:1; }
+  .axis { stroke:#888; stroke-width:1; }
+  .thr { stroke:#e6a000; stroke-width:1; stroke-dasharray:4 3; }
+  .ax-lbl { font-size:11px; fill:#666; }
+</style></head><body>
+  <h3>mean token entropy per denoising step (4972 canvases/method)</h3>
+  <div class="legend">
+    <span class="sw" style="background:#2a7"></span>bf16 temp0
+    <span class="sw" style="background:#c44"></span>bf16 temp0.6
+    <span class="sw" style="background:#36c"></span>moe-fp4/mlp-bf16 temp0
+    <span class="sw" style="background:#e6a000"></span>moe-fp4/mlp-bf16 temp0.6
+    <span class="sw" style="background:#e6a000"></span>commit threshold (0.005)
+    <label class="legend"><input type="checkbox" id="logy"> log y-axis</label>
+    <label class="legend"><input type="checkbox" id="band" checked> +/-1 sigma band</label>
+    <label class="legend"><input type="checkbox" id="percanvas"> per-canvas lines</label>
+  </div>
+  <div id="chart"></div>
+  <div id="readout">&nbsp;</div>
+<script>
+// each: {mean:[[step,v]...], lo:[...], hi:[...], color:"#..", name:".."}
+const SERIES = [{"name": "bf16 temp0", "color": "#2a7", "mean": [[1, 4.01038], [2, 3.57571], [3, 3.02308], [4, 2.43584], [5, 1.83537], [6, 1.29368], [7, 0.86558], [8, 0.56068], [9, 0.35027], [10, 0.2109], [11, 0.12421], [12, 0.07283], [13, 0.04503], [14, 0.02945], [15, 0.02087], [16, 0.01582], [17, 0.01306], [18, 0.01137], [19, 0.01027], [20, 0.00911], [21, 0.00975], [22, 0.00983], [23, 0.01065], [24, 0.01091], [25, 0.01145], [26, 0.01205], [27, 0.01123], [28, 0.01218], [29, 0.01532], [30, 0.01326], [31, 0.01532], [32, 0.01765], [33, 0.01357], [34, 0.01272], [35, 0.00732], [36, 0.0087], [37, 0.00858], [38, 0.00477]], "lo": [[1, 3.35384], [2, 2.93202], [3, 2.36746], [4, 1.75583], [5, 1.13399], [6, 0.62604], [7, 0.28413], [8, 0.08529], [9, 0.0], [10, 0.0], [11, 0.0], [12, 0.0], [13, 0.0], [14, 0.0], [15, 0.0], [16, 0.0], [17, 0.0], [18, 0.0], [19, 0.0], [20, 0.00014], [21, 0.0], [22, 0.0], [23, 0.0], [24, 0.0], [25, 0.00123], [26, 8e-05], [27, 0.00398], [28, 0.00372], [29, 0.0066], [30, 0.00603], [31, 0.01028], [32, 0.01123], [33, 0.00945], [34, 0.00733], [35, 0.00076], [36, 0.00312], [37, 0.00777], [38, 0.00458]], "hi": [[1, 4.66692], [2, 4.21939], [3, 3.6787], [4, 3.11584], [5, 2.53674], [6, 1.96133], [7, 1.44703], [8, 1.03608], [9, 0.71886], [10, 0.47971], [11, 0.30771], [12, 0.19356], [13, 0.12514], [14, 0.08117], [15, 0.05574], [16, 0.03867], [17, 0.02962], [18, 0.02437], [19, 0.02146], [20, 0.01808], [21, 0.01982], [22, 0.02158], [23, 0.02228], [24, 0.02369], [25, 0.02166], [26, 0.02401], [27, 0.01848], [28, 0.02064], [29, 0.02404], [30, 0.02049], [31, 0.02036], [32, 0.02408], [33, 0.0177], [34, 0.01811], [35, 0.01388], [36, 0.01429], [37, 0.00939], [38, 0.00496]]}, {"name": "bf16 temp0.6", "color": "#c44", "mean": [[1, 3.99448], [2, 3.56124], [3, 3.00546], [4, 2.4155], [5, 1.81949], [6, 1.28221], [7, 0.85786], [8, 0.55327], [9, 0.34526], [10, 0.2074], [11, 0.12208], [12, 0.07141], [13, 0.04389], [14, 0.0295], [15, 0.02131], [16, 0.01643], [17, 0.01367], [18, 0.01172], [19, 0.01064], [20, 0.00919], [21, 0.00901], [22, 0.00863], [23, 0.01009], [24, 0.01004], [25, 0.0102], [26, 0.01124], [27, 0.01025], [28, 0.00815], [29, 0.01207], [30, 0.01124], [31, 0.0063], [32, 0.01075], [33, 0.0115], [34, 0.00706], [35, 0.00639], [36, 0.00724], [37, 0.00903], [38, 0.0074], [39, 0.00741], [40, 0.00648], [41, 0.00601], [42, 0.00516], [43, 0.00755], [44, 0.00982], [45, 0.00689], [46, 0.00594], [47, 0.00169]], "lo": [[1, 3.30138], [2, 2.8865], [3, 2.32931], [4, 1.72098], [5, 1.10638], [6, 0.60672], [7, 0.27147], [8, 0.07895], [9, 0.0], [10, 0.0], [11, 0.0], [12, 0.0], [13, 0.0], [14, 0.0], [15, 0.0], [16, 0.0], [17, 0.0], [18, 0.0], [19, 0.0], [20, 0.0], [21, 0.0], [22, 0.0], [23, 0.0], [24, 0.00189], [25, 0.00236], [26, 0.00347], [27, 0.00409], [28, 0.00212], [29, 0.00845], [30, 0.00509], [31, 0.00109], [32, 0.00635], [33, 0.00699], [34, 0.00492], [35, 0.00318], [36, 0.00251], [37, 0.00903], [38, 0.0074], [39, 0.00741], [40, 0.00648], [41, 0.00601], [42, 0.00516], [43, 0.00755], [44, 0.00982], [45, 0.00689], [46, 0.00594], [47, 0.00169]], "hi": [[1, 4.68757], [2, 4.23598], [3, 3.68161], [4, 3.11002], [5, 2.53261], [6, 1.9577], [7, 1.44425], [8, 1.02759], [9, 0.70807], [10, 0.4717], [11, 0.30259], [12, 0.19013], [13, 0.12349], [14, 0.08519], [15, 0.05991], [16, 0.04442], [17, 0.03383], [18, 0.02719], [19, 0.02307], [20, 0.01992], [21, 0.01964], [22, 0.01825], [23, 0.02086], [24, 0.0182], [25, 0.01803], [26, 0.01901], [27, 0.01641], [28, 0.01419], [29, 0.01568], [30, 0.01738], [31, 0.01151], [32, 0.01514], [33, 0.016], [34, 0.0092], [35, 0.00959], [36, 0.01196], [37, 0.00903], [38, 0.0074], [39, 0.00741], [40, 0.00648], [41, 0.00601], [42, 0.00516], [43, 0.00755], [44, 0.00982], [45, 0.00689], [46, 0.00594], [47, 0.00169]]}, {"name": "moe-fp4/mlp-bf16 temp0", "color": "#36c", "mean": [[1, 4.03872], [2, 3.63571], [3, 3.12939], [4, 2.588], [5, 2.03961], [6, 1.51371], [7, 1.07053], [8, 0.72717], [9, 0.47379], [10, 0.2971], [11, 0.18161], [12, 0.10821], [13, 0.06562], [14, 0.04169], [15, 0.02823], [16, 0.02082], [17, 0.01668], [18, 0.01417], [19, 0.01281], [20, 0.01154], [21, 0.0115], [22, 0.01074], [23, 0.01139], [24, 0.01098], [25, 0.00964], [26, 0.01004], [27, 0.00975], [28, 0.0097], [29, 0.00797], [30, 0.00873], [31, 0.00797], [32, 0.01137], [33, 0.00418], [34, 0.00871], [35, 0.00818], [36, 0.00167]], "lo": [[1, 3.3416], [2, 2.95533], [3, 2.44635], [4, 1.88861], [5, 1.31932], [6, 0.80796], [7, 0.4356], [8, 0.192], [9, 0.049], [10, 0.0], [11, 0.0], [12, 0.0], [13, 0.0], [14, 0.0], [15, 0.0], [16, 0.0], [17, 0.0], [18, 0.0], [19, 0.0], [20, 0.0], [21, 0.0], [22, 0.0], [23, 0.0], [24, 0.00099], [25, 0.00131], [26, 0.00069], [27, 0.00244], [28, 0.00304], [29, 0.00354], [30, 0.00452], [31, 0.00111], [32, 0.00921], [33, 0.00096], [34, 0.00662], [35, 0.00702], [36, 0.00064]], "hi": [[1, 4.73585], [2, 4.31609], [3, 3.81243], [4, 3.28739], [5, 2.7599], [6, 2.21946], [7, 1.70546], [8, 1.26234], [9, 0.89858], [10, 0.61485], [11, 0.41014], [12, 0.2647], [13, 0.17234], [14, 0.11597], [15, 0.08013], [16, 0.05752], [17, 0.04507], [18, 0.03633], [19, 0.03115], [20, 0.03068], [21, 0.02785], [22, 0.02399], [23, 0.02337], [24, 0.02098], [25, 0.01796], [26, 0.0194], [27, 0.01705], [28, 0.01636], [29, 0.01241], [30, 0.01295], [31, 0.01483], [32, 0.01354], [33, 0.00739], [34, 0.01079], [35, 0.00934], [36, 0.0027]]}, {"name": "moe-fp4/mlp-bf16 temp0.6", "color": "#e6a000", "mean": [[1, 4.03838], [2, 3.63682], [3, 3.13247], [4, 2.59313], [5, 2.04445], [6, 1.5271], [7, 1.07981], [8, 0.73401], [9, 0.48036], [10, 0.3024], [11, 0.18305], [12, 0.10916], [13, 0.06641], [14, 0.04121], [15, 0.02768], [16, 0.02041], [17, 0.01615], [18, 0.0137], [19, 0.01269], [20, 0.01179], [21, 0.0105], [22, 0.01033], [23, 0.00879], [24, 0.01161], [25, 0.01123], [26, 0.01177], [27, 0.00966], [28, 0.00815], [29, 0.01218], [30, 0.01253], [31, 0.01531], [32, 0.01321], [33, 0.01528], [34, 0.01363], [35, 0.01258], [36, 0.01441], [37, 0.01464], [38, 0.01114], [39, 0.00624], [40, 0.00122]], "lo": [[1, 3.34183], [2, 2.9547], [3, 2.44866], [4, 1.89662], [5, 1.3229], [6, 0.81895], [7, 0.43869], [8, 0.19151], [9, 0.04832], [10, 0.0], [11, 0.0], [12, 0.0], [13, 0.0], [14, 0.0], [15, 0.0], [16, 0.0], [17, 0.0], [18, 0.0], [19, 0.0], [20, 0.0], [21, 0.0], [22, 0.0], [23, 0.0], [24, 0.0], [25, 0.00084], [26, 0.00372], [27, 0.00205], [28, 0.0001], [29, 0.00049], [30, 0.00175], [31, 0.00504], [32, 0.00697], [33, 0.00079], [34, 0.0], [35, 0.0], [36, 0.00856], [37, 0.00307], [38, 0.00208], [39, 0.00624], [40, 0.00122]], "hi": [[1, 4.73493], [2, 4.31893], [3, 3.81629], [4, 3.28963], [5, 2.76599], [6, 2.23525], [7, 1.72094], [8, 1.27651], [9, 0.9124], [10, 0.62809], [11, 0.41484], [12, 0.26924], [13, 0.17623], [14, 0.11536], [15, 0.08015], [16, 0.05813], [17, 0.04295], [18, 0.03612], [19, 0.03299], [20, 0.02778], [21, 0.02495], [22, 0.02127], [23, 0.0193], [24, 0.02461], [25, 0.02162], [26, 0.01982], [27, 0.01726], [28, 0.01621], [29, 0.02387], [30, 0.0233], [31, 0.02557], [32, 0.01946], [33, 0.02977], [34, 0.02774], [35, 0.02544], [36, 0.02025], [37, 0.02621], [38, 0.0202], [39, 0.00624], [40, 0.00122]]}];
+const CONF = 0.005;
+const W = 980, H = 500, PADL = 64, PADR = 20, PADT = 20, PADB = 44;
+const PW = W - PADL - PADR, PH = H - PADT - PADB;
+
+let logY = false, showBand = true, perCanvas = false;
+const allSteps = [], allVals = [];
+for (const s of SERIES) {
+  for (const d of s.hi) { allSteps.push(d[0]); allVals.push(d[1]); }
+  for (const d of s.lo) { allVals.push(d[1]); }
+  for (const ln of (s.lines || [])) {
+    for (const d of ln) { allSteps.push(d[0]); allVals.push(d[1]); }
+  }
+}
+const xMin = Math.min(...allSteps), xMax = Math.max(...allSteps);
+const yMaxRaw = Math.max(...allVals, CONF);
+const posVals = allVals.concat([CONF]).filter(v => v > 0);
+const yMinPos = posVals.length ? Math.min(...posVals) : 1e-6;
+
+const xScale = s => PADL + (xMax === xMin ? 0 : (s - xMin) / (xMax - xMin) * PW);
+function yScale(v) {
+  if (logY) {
+    const lo = Math.log10(yMinPos), hi = Math.log10(yMaxRaw || 1);
+    const vv = Math.log10(Math.max(v, yMinPos));
+    return PADT + (hi === lo ? 0 : (1 - (vv - lo) / (hi - lo)) * PH);
+  }
+  return PADT + (1 - v / (yMaxRaw || 1)) * PH;
+}
+function linePath(series) {
+  return series.map((d, i) =>
+    (i ? "L" : "M") + xScale(d[0]).toFixed(1) + " " + yScale(d[1]).toFixed(1)
+  ).join(" ");
+}
+function bandPath(lo, hi) {
+  const up = hi.map((d, i) =>
+    (i ? "L" : "M") + xScale(d[0]).toFixed(1) + " " + yScale(d[1]).toFixed(1));
+  const dn = lo.slice().reverse().map(d =>
+    "L" + xScale(d[0]).toFixed(1) + " " + yScale(d[1]).toFixed(1));
+  return up.join(" ") + " " + dn.join(" ") + " Z";
+}
+function ticksY() {
+  const out = [];
+  if (logY) {
+    let e = Math.floor(Math.log10(yMinPos));
+    const top = Math.ceil(Math.log10(yMaxRaw || 1));
+    for (; e <= top; e++) out.push(Math.pow(10, e));
+  } else {
+    const n = 5;
+    for (let i = 0; i <= n; i++) out.push(yMaxRaw * i / n);
+  }
+  return out;
+}
+function ticksX() {
+  const out = [], span = xMax - xMin, stepGuess = Math.ceil(span / 10) || 1;
+  for (let s = xMin; s <= xMax; s += stepGuess) out.push(s);
+  if (out[out.length - 1] !== xMax) out.push(xMax);
+  return out;
+}
+const SVGNS = "http://www.w3.org/2000/svg";
+function el(name, attrs) {
+  const n = document.createElementNS(SVGNS, name);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  return n;
+}
+function hexA(hex, a) {
+  let h = hex.replace("#", "");
+  if (h.length === 3) h = h[0]+h[0] + h[1]+h[1] + h[2]+h[2];
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16),
+        b = parseInt(h.slice(4, 6), 16);
+  return "rgba(" + r + "," + g + "," + b + "," + a + ")";
+}
+let svg;
+function draw() {
+  const chart = document.getElementById('chart');
+  chart.innerHTML = "";
+  svg = el("svg", {width: W, height: H, viewBox: "0 0 " + W + " " + H});
+  for (const t of ticksY()) {
+    const y = yScale(t);
+    svg.appendChild(el("line", {class:"grid", x1:PADL, y1:y, x2:W-PADR, y2:y}));
+    const lbl = el("text", {class:"ax-lbl", x:PADL-6, y:y+3, "text-anchor":"end"});
+    lbl.textContent = t >= 0.01 || t === 0 ? t.toFixed(3) : t.toExponential(0);
+    svg.appendChild(lbl);
+  }
+  for (const t of ticksX()) {
+    const x = xScale(t);
+    svg.appendChild(el("line", {class:"grid", x1:x, y1:PADT, x2:x, y2:H-PADB}));
+    const lbl = el("text", {class:"ax-lbl", x:x, y:H-PADB+16, "text-anchor":"middle"});
+    lbl.textContent = t;
+    svg.appendChild(lbl);
+  }
+  svg.appendChild(el("line", {class:"axis", x1:PADL, y1:PADT, x2:PADL, y2:H-PADB}));
+  svg.appendChild(el("line", {class:"axis", x1:PADL, y1:H-PADB, x2:W-PADR, y2:H-PADB}));
+  const xt = el("text", {class:"ax-lbl", x:PADL+PW/2, y:H-6, "text-anchor":"middle"});
+  xt.textContent = "denoising step"; svg.appendChild(xt);
+  const yt = el("text", {class:"ax-lbl", x:14, y:PADT+PH/2,
+    "text-anchor":"middle", transform:"rotate(-90 14 " + (PADT+PH/2) + ")"});
+  yt.textContent = "mean token entropy"; svg.appendChild(yt);
+  if (!(logY && CONF <= 0)) {
+    const yT = yScale(CONF);
+    svg.appendChild(el("line", {class:"thr", x1:PADL, y1:yT, x2:W-PADR, y2:yT}));
+  }
+  if (showBand && !perCanvas) {
+    for (const s of SERIES) {
+      svg.appendChild(el("path", {d:bandPath(s.lo, s.hi), fill:hexA(s.color, 0.13),
+        stroke:"none"}));
+    }
+  }
+  if (perCanvas) {
+    for (const s of SERIES) {
+      for (const ln of (s.lines || [])) {
+        if (ln.length < 2) continue;
+        svg.appendChild(el("path", {d:linePath(ln), fill:"none",
+          stroke:hexA(s.color, 0.45), "stroke-width":1}));
+      }
+    }
+  }
+  for (const s of SERIES) {
+    svg.appendChild(el("path", {d:linePath(s.mean), fill:"none", stroke:s.color,
+      "stroke-width":2}));
+    for (const d of s.mean) {
+      svg.appendChild(el("circle", {cx:xScale(d[0]), cy:yScale(d[1]), r:2,
+        fill:s.color}));
+    }
+  }
+  const guide = el("line", {class:"axis", x1:0, y1:PADT, x2:0, y2:H-PADB,
+    stroke:"#bbb", "stroke-dasharray":"2 2", visibility:"hidden"});
+  svg.appendChild(guide);
+  const hit = el("rect", {x:PADL, y:PADT, width:PW, height:PH, fill:"transparent"});
+  svg.appendChild(hit);
+  const ro = document.getElementById('readout');
+  function nearest(series, sx) {
+    let best = null, bd = Infinity;
+    for (const d of series) { const dx = Math.abs(xScale(d[0]) - sx);
+      if (dx < bd) { bd = dx; best = d; } }
+    return best;
+  }
+  hit.addEventListener('mousemove', e => {
+    const r = svg.getBoundingClientRect();
+    const sx = (e.clientX - r.left) * (W / r.width);
+    guide.setAttribute('x1', sx); guide.setAttribute('x2', sx);
+    guide.setAttribute('visibility', 'visible');
+    let parts = [];
+    let step = "-";
+    for (const s of SERIES) {
+      const p = nearest(s.mean, sx);
+      if (p) step = p[0];
+      parts.push("<span style='color:" + s.color + "'>" + s.name + " meanH=" +
+        (p ? p[1] : "-") + "</span>");
+    }
+    ro.innerHTML = "step " + step + " &nbsp; " + parts.join(" &nbsp; ");
+  });
+  hit.addEventListener('mouseleave', () => {
+    guide.setAttribute('visibility', 'hidden'); ro.innerHTML = "&nbsp;";
+  });
+  chart.appendChild(svg);
+}
+document.getElementById('logy').addEventListener('change', e => {
+  logY = e.target.checked; draw();
+});
+document.getElementById('band').addEventListener('change', e => {
+  showBand = e.target.checked; draw();
+});
+document.getElementById('percanvas').addEventListener('change', e => {
+  perCanvas = e.target.checked; draw();
+});
+draw();
+</script></body></html>
